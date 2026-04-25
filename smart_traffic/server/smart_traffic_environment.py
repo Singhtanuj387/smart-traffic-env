@@ -8,7 +8,7 @@
 Smart Traffic Environment — 9×9 MARL traffic signal control.
 
 81 agents, each controlling one intersection's signal phases.
-Implements openenv-core Environment[MultiAgentAction, TrafficObservation, TrafficState].
+Implements openenv-core Environment[TrafficAction, TrafficObservation, TrafficState].
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from openenv.core.env_server.types import EnvironmentMetadata
 try:
     from ..models import (
         AgentObservation,
-        MultiAgentAction,
+        TrafficAction,
         TrafficObservation,
         TrafficState,
     )
@@ -33,7 +33,7 @@ try:
 except ImportError:
     from models import (
         AgentObservation,
-        MultiAgentAction,
+        TrafficAction,
         TrafficObservation,
         TrafficState,
     )
@@ -43,7 +43,7 @@ except ImportError:
 
 
 class SmartTrafficEnvironment(
-    Environment[MultiAgentAction, TrafficObservation, TrafficState]
+    Environment[TrafficAction, TrafficObservation, TrafficState]
 ):
     """
     9×9 MARL traffic signal control environment.
@@ -100,19 +100,53 @@ class SmartTrafficEnvironment(
             vehicles_passed=0,
             active_scenarios=self._scenarios.active_names,
         )
+        self._sub_step = 0
+        self._current_actions = []
 
         return self._build_observation(rewards=[0.0] * self.N_AGENTS)
 
     def step(
         self,
-        action: MultiAgentAction,
+        action: TrafficAction,
         timeout_s: Optional[float] = None,
         **kwargs: Any,
     ) -> TrafficObservation:
         """
-        Process one timestep for all 81 agents.
-        Returns TrafficObservation with reward (mean) and done embedded.
+        Process single sequential agent step.
+        Ticks physics only after all 81 agents have acted.
         """
+        # Validate sequential ordering
+        if action.agent_id != self._sub_step:
+            raise ValueError(f"Expected agent {self._sub_step} to act, got {action.agent_id}")
+
+        self._current_actions.append(action)
+
+        # 1. Immediate Phase application for sequential observation updates
+        agent_idx = action.agent_id
+        prev_phase = self._state.phases[agent_idx]
+        new_phase = action.phase
+
+        if new_phase != prev_phase:
+            self._state.yellow_flags[agent_idx] = True
+            self._state.phase_timers[agent_idx] = 0
+            self._grid.intersections[agent_idx].yellow_active = True
+
+        self._grid.apply_phase(
+            agent_idx,
+            action.phase,
+            self._state.yellow_flags[agent_idx],
+        )
+
+        # Increment turn
+        self._sub_step += 1
+
+        # If not all agents acted, return intermediate observation
+        if self._sub_step < self.N_AGENTS:
+            # Re-read phases into state so obs builder catches it
+            self._state.phases = self._grid.get_all_phases()
+            return self._build_observation(rewards=[0.0] * self.N_AGENTS)
+
+        # --- PHYSICS TICK: All 81 agents acted ---
         t = self._state.step_count
 
         # 1. Apply scenario dynamics
@@ -126,24 +160,7 @@ class SmartTrafficEnvironment(
             base_rate=self.SPAWN_RATE_BASE,
         )
 
-        # 3. Apply agent actions + auto-insert yellow transitions
         prev_queues = [list(q) for q in self._state.queues]
-        for ag_action in action.actions:
-            agent_idx = ag_action.agent_id
-            prev_phase = self._state.phases[agent_idx]
-            new_phase = ag_action.phase
-
-            if new_phase != prev_phase:
-                # Force yellow transition before switching
-                self._state.yellow_flags[agent_idx] = True
-                self._state.phase_timers[agent_idx] = 0
-                self._grid.intersections[agent_idx].yellow_active = True
-
-            self._grid.apply_phase(
-                agent_idx,
-                ag_action.phase,
-                self._state.yellow_flags[agent_idx],
-            )
 
         # 4. Advance yellow counters
         for i in range(self.N_AGENTS):
@@ -166,7 +183,7 @@ class SmartTrafficEnvironment(
         rewards = self._rewards.compute_all(
             grid=self._grid,
             prev_queues=prev_queues,
-            actions=action.actions,
+            actions=self._current_actions,
             scenario_update=scenario_update,
             weight_overrides=self._scenarios.get_reward_overrides(),
         )
@@ -184,6 +201,10 @@ class SmartTrafficEnvironment(
 
         done = self._state.step_count >= self.MAX_STEPS
         mean_reward = float(np.mean(rewards))
+
+        # Reset turn loop BEFORE building observation so active_agent=0
+        self._sub_step = 0
+        self._current_actions = []
 
         obs = self._build_observation(rewards)
         obs.done = done
@@ -221,6 +242,7 @@ class SmartTrafficEnvironment(
                     ),
                     yellow_active=float(self._state.yellow_flags[i]),
                     neighbor_queues=self._grid.get_neighbor_queues(i),
+                    neighbor_phases=self._grid.get_neighbor_phases(i),
                     congestion_index=self._grid.get_congestion_index(i),
                     special_flags=self._scenarios.get_flags(i),
                     agent_reward=rewards[i],
@@ -229,6 +251,7 @@ class SmartTrafficEnvironment(
 
         return TrafficObservation(
             step=self._state.step_count,
+            active_agent=getattr(self, "_sub_step", 0),
             done=self._state.step_count >= self.MAX_STEPS,
             reward=float(np.mean(rewards)),
             agents=agents,

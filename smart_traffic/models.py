@@ -81,7 +81,7 @@ class ScenarioFlags(BaseModel):
 
 
 class AgentObservation(BaseModel):
-    """47-dimensional observation for a single agent."""
+    """67-dimensional observation for a single agent."""
 
     agent_id: int
     queue_lengths: list[float] = Field(..., min_length=12, max_length=12)
@@ -90,6 +90,7 @@ class AgentObservation(BaseModel):
     phase_elapsed: float = Field(..., ge=0.0, le=1.0)
     yellow_active: float = Field(..., ge=0.0, le=1.0)
     neighbor_queues: list[float] = Field(..., min_length=8, max_length=8)
+    neighbor_phases: list[float] = Field(..., min_length=20, max_length=20)
     congestion_index: list[float] = Field(..., min_length=4, max_length=4)
     special_flags: list[float] = Field(..., min_length=4, max_length=4)
     agent_reward: float = 0.0
@@ -102,6 +103,7 @@ class TrafficObservation(Observation):
     """
 
     step: int = 0
+    active_agent: int = 0
     agents: list[AgentObservation] = Field(default_factory=list)
     global_metrics: GlobalMetrics = Field(default_factory=GlobalMetrics)
     scenario_flags: ScenarioFlags = Field(default_factory=ScenarioFlags)

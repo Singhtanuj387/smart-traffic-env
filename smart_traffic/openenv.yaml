@@ -12,7 +12,7 @@ client:
   module: smart_traffic.client
 
 action:
-  class_name: MultiAgentAction
+  class_name: TrafficAction
   module: smart_traffic.models
 
 observation:

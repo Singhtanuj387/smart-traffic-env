@@ -23,7 +23,6 @@ from openenv.core.env_server.types import State
 from .models import (
     AgentObservation,
     GlobalMetrics,
-    MultiAgentAction,
     ScenarioFlags,
     TrafficAction,
     TrafficObservation,
@@ -33,7 +32,7 @@ from .models import (
 
 
 class SmartTrafficEnv(
-    EnvClient[MultiAgentAction, TrafficObservation, TrafficState]
+    EnvClient[TrafficAction, TrafficObservation, TrafficState]
 ):
     """
     Client for the Smart Traffic Environment.
@@ -44,13 +43,13 @@ class SmartTrafficEnv(
     Example:
         >>> with SmartTrafficEnv(base_url="http://localhost:8000") as client:
         ...     result = client.reset()
-        ...     # Create actions for all 81 agents
-        ...     actions = [0] * 81  # phase indices
-        ...     result = client.step_flat(actions)
+        ...     # Sequential: one agent at a time
+        ...     action = TrafficAction(agent_id=0, phase="NS_GREEN")
+        ...     result = client.step(action)
     """
 
-    def _step_payload(self, action: MultiAgentAction) -> Dict:
-        """Convert MultiAgentAction to JSON payload for step message."""
+    def _step_payload(self, action: TrafficAction) -> Dict:
+        """Convert TrafficAction to JSON payload for step message."""
         return action.model_dump(exclude={"metadata"})
 
     def _parse_result(self, payload: Dict) -> StepResult[TrafficObservation]:
@@ -72,6 +71,7 @@ class SmartTrafficEnv(
 
         observation = TrafficObservation(
             step=obs_data.get("step", 0),
+            active_agent=obs_data.get("active_agent", 0),
             done=payload.get("done", False),
             reward=payload.get("reward"),
             agents=agents,
@@ -101,22 +101,16 @@ class SmartTrafficEnv(
 
     # ── Convenience methods ──────────────────────────────────
 
-    def step_flat(self, actions: List[int]) -> StepResult[TrafficObservation]:
+    def step_single(self, agent_id: int, phase_idx: int) -> StepResult[TrafficObservation]:
         """
-        Convenience wrapper: accepts flat list of 81 phase indices (0-4).
-        Converts to MultiAgentAction and calls step().
+        Convenience wrapper: step a single agent by index.
         """
-        batch = MultiAgentAction(
-            actions=[
-                TrafficAction(agent_id=i, phase=PHASE_LIST[a])
-                for i, a in enumerate(actions)
-            ]
-        )
-        return self.step(batch)
+        action = TrafficAction(agent_id=agent_id, phase=PHASE_LIST[phase_idx])
+        return self.step(action)
 
     @staticmethod
     def get_numpy_obs(obs: TrafficObservation) -> np.ndarray:
-        """Return (81, 47) numpy array of agent observations."""
+        """Return (81, 67) numpy array of agent observations."""
         rows = []
         for ag in obs.agents:
             row = (
@@ -126,8 +120,9 @@ class SmartTrafficEnv(
                 + [ag.phase_elapsed]  # 1
                 + [ag.yellow_active]  # 1
                 + ag.neighbor_queues  # 8
+                + ag.neighbor_phases  # 20
                 + ag.congestion_index # 4
-                + ag.special_flags    # 4 → total 47
+                + ag.special_flags    # 4 → total 67
             )
             rows.append(row)
-        return np.array(rows, dtype=np.float32)  # (81, 47)
+        return np.array(rows, dtype=np.float32)  # (81, 67)

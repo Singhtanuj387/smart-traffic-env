@@ -17,7 +17,7 @@ def main():
     # The gym adapter takes the base URL and handles the async client internally
     env = TrafficGymAdapter(server_url=args.url)
     
-    trainer = MAPPO(obs_dim=47, n_actions=5, n_agents=81, lr=3e-4)
+    trainer = MAPPO(obs_dim=67, n_actions=5, n_agents=81, lr=3e-4)
 
     print(f"Starting Training for {args.episodes} episodes...")
 
@@ -28,24 +28,41 @@ def main():
         steps = 0
         
         while not done and steps < 200:
-            actions, log_probs, values = trainer.act(obs)
+            batch_obs = []
+            batch_acts = []
+            batch_log_probs = []
+            batch_values = []
             
-            next_obs, global_reward, terminated, truncated, info = env.step(actions)
-            done = terminated or truncated
-            
+            for _ in range(81):
+                # get locally tracked active agent
+                active_agent = getattr(env, "_current_agent", 0)
+                single_obs = obs[active_agent]
+                
+                action, log_prob, value = trainer.act_single(single_obs)
+                
+                next_obs, global_reward, terminated, truncated, info = env.step(action)
+                done = terminated or truncated
+                
+                batch_obs.append(single_obs)
+                batch_acts.append(action)
+                batch_log_probs.append(log_prob)
+                batch_values.append(value)
+                
+                obs = next_obs
+                
+            # Once 81 agents act, physics triggers and reward is populated
             per_agent_rewards = np.array(info.get("per_agent_rewards", [global_reward] * trainer.n_agents))
             
-            # Record trajectory
+            # Record trajectory simultaneously for the trainer history
             trainer.buffer.add(
-                obs=obs,
-                action=actions,
-                log_prob=log_probs,
+                obs=np.array(batch_obs),
+                action=np.array(batch_acts),
+                log_prob=np.array(batch_log_probs),
                 reward=per_agent_rewards,
-                value=values,
+                value=np.array(batch_values),
                 done=done
             )
             
-            obs = next_obs
             total_reward += global_reward
             steps += 1
             

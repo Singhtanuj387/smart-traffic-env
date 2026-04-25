@@ -127,7 +127,7 @@ class MAPPO:
 
     def __init__(
         self,
-        obs_dim: int = 47,
+        obs_dim: int = 67,
         n_actions: int = 5,
         n_agents: int = 81,
         lr: float = 3e-4,
@@ -180,6 +180,28 @@ class MAPPO:
             actions.cpu().numpy(),
             log_probs.cpu().numpy(),
             values.cpu().numpy(),
+        )
+
+    def act_single(self, obs: np.ndarray) -> Tuple[int, float, float]:
+        """
+        Select action for a single agent (used in sequential environments).
+        
+        Args:
+            obs: (67,) observation array
+            
+        Returns:
+            action: integer action index
+            log_prob: float log probability
+            value: float value estimate
+        """
+        obs_t = torch.FloatTensor(obs).unsqueeze(0).to(self.device)
+        with torch.no_grad():
+            actions, log_probs, values = self.policy.act(obs_t)
+            
+        return (
+            int(actions[0].item()),
+            float(log_probs[0].item()),
+            float(values[0].item()),
         )
 
     def update(self) -> Dict[str, float]:

@@ -30,14 +30,14 @@ except Exception as e:
         "openenv is required. Install with 'pip install openenv-core[core]'"
     ) from e
 
-from smart_traffic.models import MultiAgentAction, TrafficObservation
+from smart_traffic.models import TrafficAction, TrafficObservation
 from smart_traffic.server.smart_traffic_environment import SmartTrafficEnvironment
 
 
 # Create the app with openenv HTTP server wrapper
 app = create_app(
     SmartTrafficEnvironment,
-    MultiAgentAction,
+    TrafficAction,
     TrafficObservation,
     env_name="smart-traffic-env",
     max_concurrent_envs=4,  # support parallel training sessions
@@ -51,10 +51,5 @@ def main(host: str = "0.0.0.0", port: int = 8000):
     uvicorn.run(app, host=host, port=port)
 
 
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=8000)
-    args = parser.parse_args()
-    main(port=args.port)
+if __name__ == '__main__':
+    main()

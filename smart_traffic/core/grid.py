@@ -260,6 +260,27 @@ class TrafficGrid:
                 result.append(0.0)
         return result
 
+    def get_neighbor_phases(self, agent_id: int) -> List[float]:
+        """
+        20-element list: one-hot encoded phase (0-4) for each of the 4 neighbors (N, S, E, W).
+        If no neighbor exists in that direction, returns all zeros.
+        """
+        phase_names = [
+            "NS_STRAIGHT_GREEN", "EW_STRAIGHT_GREEN",
+            "PROTECTED_NS_LEFT", "PROTECTED_EW_LEFT", "ALL_RED_HOLD",
+        ]
+        ix = self.intersections[agent_id]
+        result = []
+        for direction in ["N", "S", "E", "W"]:
+            nb_idx = ix.neighbors.get(direction)
+            phase_one_hot = [0.0] * 5
+            if nb_idx is not None:
+                p = self.intersections[nb_idx].current_phase
+                if p in phase_names:
+                    phase_one_hot[phase_names.index(p)] = 1.0
+            result.extend(phase_one_hot)
+        return result
+
     def get_congestion_index(self, agent_id: int) -> List[float]:
         return self.intersections[agent_id].get_congestion_index()
 

@@ -8,7 +8,6 @@
 
 from .client import SmartTrafficEnv
 from .models import (
-    MultiAgentAction,
     TrafficAction,
     TrafficObservation,
     AgentObservation,
@@ -21,7 +20,6 @@ from .models import (
 
 __all__ = [
     "SmartTrafficEnv",
-    "MultiAgentAction",
     "TrafficAction",
     "TrafficObservation",
     "AgentObservation",

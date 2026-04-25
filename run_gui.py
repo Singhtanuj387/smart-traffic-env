@@ -1,16 +1,23 @@
 import time
 from smart_traffic.client import SmartTrafficEnv
+from smart_traffic.models import TrafficAction, PHASE_LIST
 from smart_traffic.visualization.grid_renderer import GridRenderer
 
-if __name__ == "__main__":
+import asyncio
+
+async def main():
     env = SmartTrafficEnv(base_url="http://localhost:8000")
-    renderer = GridRenderer(fps=30)
+    renderer = GridRenderer()
     
-    obs = env.reset(scenario="rush_hour").observation
+    res = await env.reset(scenario="rush_hour")
+    obs = res.observation if hasattr(res, "observation") else res
     
-    for _ in range(1000):
+    for _ in range(100):
         renderer.render(obs)
-        # Random light changes (4) or mostly holding (0-3)
-        actions = [4] * 81 
-        obs = env.step_flat(actions).observation
-        time.sleep(0.1)
+        for agent_id in range(81):
+            result = await env.step_single(agent_id, 4)
+            obs = result.observation
+        time.sleep(0.01)
+
+if __name__ == "__main__":
+    asyncio.run(main())

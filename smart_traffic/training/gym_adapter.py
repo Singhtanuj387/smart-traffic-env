@@ -14,7 +14,7 @@ import gymnasium as gym
 import numpy as np
 
 from ..client import SmartTrafficEnv
-from ..models import MultiAgentAction, TrafficAction, PHASE_LIST
+from ..models import TrafficAction, PHASE_LIST
 
 
 class TrafficGymAdapter(gym.Env):
@@ -40,15 +40,16 @@ class TrafficGymAdapter(gym.Env):
         self.scenario = scenario
         self._loop = asyncio.new_event_loop()
 
-        # 81 agents × 47 observation dims
+        # 81 agents × 67 observation dims
         self.observation_space = gym.spaces.Box(
-            low=0.0, high=1.0, shape=(81, 47), dtype=np.float32
+            low=0.0, high=1.0, shape=(81, 67), dtype=np.float32
         )
 
-        # 81 agents × 5 discrete actions
-        self.action_space = gym.spaces.MultiDiscrete([5] * 81)
+        # 1 agent × 5 discrete actions
+        self.action_space = gym.spaces.Discrete(5)
 
         self._last_obs = None
+        self._current_agent = 0
 
     def reset(
         self,
@@ -65,6 +66,7 @@ class TrafficGymAdapter(gym.Env):
         obs = result.observation if hasattr(result, "observation") else result
         np_obs = SmartTrafficEnv.get_numpy_obs(obs)
         self._last_obs = obs
+        self._current_agent = getattr(obs, "active_agent", 0)
 
         info = {
             "step": obs.step,
@@ -74,29 +76,27 @@ class TrafficGymAdapter(gym.Env):
         return np_obs, info
 
     def step(
-        self, actions: np.ndarray
+        self, action: int
     ) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
-        action_list = actions.tolist()
-        batch = MultiAgentAction(
-            actions=[
-                TrafficAction(agent_id=i, phase=PHASE_LIST[a])
-                for i, a in enumerate(action_list)
-            ]
-        )
+        # Take single action for the currently active agent tracking locally
+        traffic_action = TrafficAction(agent_id=self._current_agent, phase=PHASE_LIST[int(action)])
 
         result = self._loop.run_until_complete(
-            self.client.step(batch)
+            self.client.step(traffic_action)
         )
         obs = result.observation
         np_obs = SmartTrafficEnv.get_numpy_obs(obs)
         self._last_obs = obs
+        self._current_agent = getattr(obs, "active_agent", 0)
 
+        # In sequential MDP, rewards are 0 until the final agent steps
         reward = result.reward if result.reward is not None else 0.0
         done = result.done
         truncated = False
 
         info = {
             "step": obs.step,
+            "active_agent": self._current_agent,
             "global_metrics": obs.global_metrics.model_dump(),
             "per_agent_rewards": [ag.agent_reward for ag in obs.agents],
         }
