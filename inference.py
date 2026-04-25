@@ -2,9 +2,11 @@ import os
 import json
 import time
 import argparse
+import asyncio
 from typing import List, Dict, Any
 
-from openai import OpenAI
+from openai import AsyncOpenAI
+from huggingface_hub import AsyncInferenceClient
 from pydantic import BaseModel, Field
 
 from smart_traffic.client import SmartTrafficEnv
@@ -55,13 +57,28 @@ def extract_context(obs) -> str:
     return json.dumps(context, indent=2)
 
 
-def run_baseline(server_url: str = "http://localhost:8000", max_steps: int = 100):
-    """Run baseline evaluation over all scenarios using OpenAI API."""
+async def run_baseline(server_url: str = "http://localhost:8000", max_steps: int = 100):
+    """Run baseline evaluation over all scenarios using OpenAI API / Hugging Face."""
+    
+    # Check for Hugging Face first
+    hf_token = os.environ.get("HF_TOKEN")
+    
+    # Fallback to standard OpenAI
     api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY environment variable is missing.")
 
-    llm_client = OpenAI(api_key=api_key)
+    if hf_token:
+        print("Using HuggingFace Hub InferenceClient...")
+        model_name = os.environ.get("MODEL_NAME", "meta-llama/Meta-Llama-3-8B-Instruct")
+        llm_client = AsyncInferenceClient(model=model_name, token=hf_token)
+        is_hf = True
+    elif api_key:
+        print("Using standard OpenAI API...")
+        llm_client = AsyncOpenAI(api_key=api_key)
+        model_name = os.environ.get("MODEL_NAME", "gpt-4o-mini")
+        is_hf = False
+    else:
+        raise ValueError("Either HF_TOKEN or OPENAI_API_KEY environment variable is required.")
+
     env_client = SmartTrafficEnv(base_url=server_url)
 
     scenarios = list(SCENARIO_REGISTRY.keys())
@@ -73,7 +90,7 @@ def run_baseline(server_url: str = "http://localhost:8000", max_steps: int = 100
     for scenario in scenarios:
         print(f"--- Running scenario: {scenario} ---")
         try:
-            res = env_client.reset(scenario=scenario)
+            res = await env_client.reset(scenario=scenario)
             obs = res.observation if hasattr(res, "observation") else res
             
             total_reward = 0.0
@@ -87,29 +104,53 @@ def run_baseline(server_url: str = "http://localhost:8000", max_steps: int = 100
                     "You are controlling 81 traffic intersections in a 9x9 grid.\n"
                     "Phases are restricted to [0, 1, 2, 3, 4] mapping to:\n"
                     "0: NS_STRAIGHT, 1: EW_STRAIGHT, 2: NS_LEFT, 3: EW_LEFT, 4: ALL_RED.\n"
-                    "Choose an array of 81 phases to optimize global traffic flow and resolve congestion."
+                    "Choose an array of exactly 81 phases. You MUST output ONLY a valid raw JSON object representing this schema: {\"actions\": [list of 81 ints]}. "
+                    "Do NOT include markdown formatting wrappers like ```json."
                 )
                 
-                response = llm_client.beta.chat.completions.parse(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"Current State: {context_str}"}
-                    ],
-                    response_format=AgentActionSchema,
-                    temperature=0.0
-                )
+                if is_hf:
+                    # HuggingFace Serverless inferencing
+                    response = await llm_client.chat_completion(
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": f"Current State: {context_str}"}
+                        ],
+                        max_tokens=600,
+                        temperature=0.0
+                    )
+                    raw_content = response.choices[0].message.content
+                    try:
+                        parsed_actions = json.loads(raw_content)["actions"]
+                    except:
+                        parsed_actions = [4] * 81
+                else:
+                    # OpenAI structured parsing
+                    response = await llm_client.beta.chat.completions.parse(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": f"Current State: {context_str}"}
+                        ],
+                        response_format=AgentActionSchema,
+                        temperature=0.0
+                    )
+                    parsed_actions = response.choices[0].message.parsed.actions
                 
-                # Extract actions
-                parsed_actions = response.choices[0].message.parsed.actions
+                # Format for env (Safeguard the output to exactly 81 agents)
+                if not isinstance(parsed_actions, list):
+                    parsed_actions = [4] * 81
                 
-                # Format for env
+                # Truncate and pad
+                parsed_actions = parsed_actions[:81]
+                if len(parsed_actions) < 81:
+                    parsed_actions.extend([4] * (81 - len(parsed_actions)))
+
                 action_batch = MultiAgentAction(actions=[
                     TrafficAction(agent_id=i, phase=PHASE_LIST[a]) 
                     for i, a in enumerate(parsed_actions)
                 ])
                 
-                step_res = env_client.step(action_batch)
+                step_res = await env_client.step(action_batch)
                 obs = step_res.observation
                 reward = step_res.reward if step_res.reward is not None else 0.0
                 
@@ -143,4 +184,4 @@ if __name__ == "__main__":
     parser.add_argument("--steps", type=int, default=50, help="Max steps per sequence (to cap API spend)")
     args = parser.parse_args()
 
-    run_baseline(server_url=args.url, max_steps=args.steps)
+    asyncio.run(run_baseline(server_url=args.url, max_steps=args.steps))

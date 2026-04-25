@@ -8,6 +8,7 @@ This wrapper gives RL libraries (TorchRL, StableBaselines3) a familiar interface
 from __future__ import annotations
 
 from typing import Any, Dict, Optional, Tuple
+import asyncio
 
 import gymnasium as gym
 import numpy as np
@@ -37,6 +38,7 @@ class TrafficGymAdapter(gym.Env):
         super().__init__()
         self.client = SmartTrafficEnv(base_url=server_url)
         self.scenario = scenario
+        self._loop = asyncio.new_event_loop()
 
         # 81 agents × 47 observation dims
         self.observation_space = gym.spaces.Box(
@@ -57,7 +59,9 @@ class TrafficGymAdapter(gym.Env):
         if options and "scenario" in options:
             scenario = options["scenario"]
 
-        result = self.client.reset(seed=seed, scenario=scenario)
+        result = self._loop.run_until_complete(
+            self.client.reset(seed=seed, scenario=scenario)
+        )
         obs = result.observation if hasattr(result, "observation") else result
         np_obs = SmartTrafficEnv.get_numpy_obs(obs)
         self._last_obs = obs
@@ -80,7 +84,9 @@ class TrafficGymAdapter(gym.Env):
             ]
         )
 
-        result = self.client.step(batch)
+        result = self._loop.run_until_complete(
+            self.client.step(batch)
+        )
         obs = result.observation
         np_obs = SmartTrafficEnv.get_numpy_obs(obs)
         self._last_obs = obs
@@ -98,4 +104,8 @@ class TrafficGymAdapter(gym.Env):
         return np_obs, reward, done, truncated, info
 
     def close(self):
-        self.client.close()
+        if hasattr(self, "_loop") and self._loop.is_running():
+            asyncio.create_task(self.client.close())
+        elif hasattr(self, "_loop"):
+            self._loop.run_until_complete(self.client.close())
+            # We don't close the loop because standard RL workloads might reuse the environment instance

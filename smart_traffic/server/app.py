@@ -17,6 +17,12 @@ Endpoints:
     - WS /ws: WebSocket endpoint for persistent sessions
 """
 
+import os
+import sys
+
+# Ensure direct execution works by adding the project root to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
 try:
     from openenv.core.env_server.http_server import create_app
 except Exception as e:
@@ -24,12 +30,8 @@ except Exception as e:
         "openenv is required. Install with 'pip install openenv-core[core]'"
     ) from e
 
-try:
-    from ..models import MultiAgentAction, TrafficObservation
-    from .smart_traffic_environment import SmartTrafficEnvironment
-except ImportError:
-    from models import MultiAgentAction, TrafficObservation
-    from server.smart_traffic_environment import SmartTrafficEnvironment
+from smart_traffic.models import MultiAgentAction, TrafficObservation
+from smart_traffic.server.smart_traffic_environment import SmartTrafficEnvironment
 
 
 # Create the app with openenv HTTP server wrapper
