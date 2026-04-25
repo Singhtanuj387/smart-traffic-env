@@ -14,10 +14,6 @@ from .intersection import Intersection, LANE_DIRECTION, NUM_LANES, MAX_QUEUE_PER
 from .pathfinder import Pathfinder
 from .vehicle import Vehicle, VehicleType
 
-# ── Models used for observations (imported lazily to avoid circular) ──
-# We only need GlobalMetrics at runtime; import at module top is fine
-# because models.py has no imports from core/.
-
 
 class TrafficGrid:
     """
@@ -46,7 +42,12 @@ class TrafficGrid:
         self._total_cleared = 0
 
         # Edge nodes for spawning
-        self._edge_nodes = self._compute_edge_nodes()
+        self._edge_nodes = sorted(self._compute_edge_nodes())
+        self._edge_set = set(self._edge_nodes)
+
+        # Pre-compute route cache (edge→edge)
+        self._route_cache: Dict[Tuple[int, int], List[int]] = {}
+        self._build_route_cache()
 
     # ── Reset ─────────────────────────────────────────────────
 
@@ -58,10 +59,37 @@ class TrafficGrid:
         self._cleared_this_step = 0
         self._total_cleared = 0
         self.pathfinder.clear_blocks()
+        self._route_cache.clear()
+        self._build_route_cache()
 
     def close(self) -> None:
         """Cleanup resources."""
         pass
+
+    def _build_route_cache(self) -> None:
+        """Pre-compute routes between all edge-node pairs."""
+        for src in self._edge_nodes:
+            for dst in self._edge_nodes:
+                if src != dst:
+                    path = self.pathfinder.find_path(src, dst)
+                    if path and len(path) >= 2:
+                        self._route_cache[(src, dst)] = path
+
+    def _get_cached_route(self, src: int, dst: int) -> Optional[List[int]]:
+        """Get a route, using cache when available."""
+        key = (src, dst)
+        if key in self._route_cache:
+            return list(self._route_cache[key])  # return copy
+        # Fallback to live pathfind (needed after road blocks)
+        path = self.pathfinder.find_path(src, dst)
+        if path and len(path) >= 2:
+            self._route_cache[key] = path
+            return list(path)
+        return None
+
+    def invalidate_route_cache(self) -> None:
+        """Clear route cache (call after road blocks change)."""
+        self._route_cache.clear()
 
     # ── Vehicle spawning ──────────────────────────────────────
 
@@ -72,8 +100,8 @@ class TrafficGrid:
         vehicle_type_probs: Optional[Dict[VehicleType, float]] = None,
     ) -> int:
         """
-        Spawn vehicles at edge intersections.
-        spawn_rate_multipliers: 81×12 per-lane spawn probabilities (multiplied by base_rate).
+        Spawn vehicles at intersections.
+        Only spawns at edge nodes unless spawn_rate_multipliers specifies otherwise.
         Returns number of vehicles spawned.
         """
         if vehicle_type_probs is None:
@@ -84,40 +112,56 @@ class TrafficGrid:
             }
 
         spawned = 0
-        for node_idx in range(self.n_nodes):
+
+        # Determine which nodes to consider for spawning
+        if spawn_rate_multipliers is not None:
+            spawn_nodes = range(self.n_nodes)
+        else:
+            spawn_nodes = self._edge_nodes
+
+        for node_idx in spawn_nodes:
             ix = self.intersections[node_idx]
-            for lane in range(NUM_LANES):
+
+            # Pick one random lane per node (not all 12 — much faster)
+            # This still gives realistic flow since each step is called 3600 times
+            n_lanes_to_try = 3 if node_idx in self._edge_set else 1
+
+            for _ in range(n_lanes_to_try):
+                lane = random.randint(0, NUM_LANES - 1)
+
                 if spawn_rate_multipliers is not None:
                     rate = base_rate * spawn_rate_multipliers[node_idx][lane]
                 else:
-                    # Only spawn at edge nodes by default
-                    if node_idx in self._edge_nodes:
-                        rate = base_rate
-                    else:
-                        rate = base_rate * 0.05  # very low interior rate
+                    rate = base_rate
 
-                if random.random() < rate:
-                    # Pick destination (random non-same edge node)
-                    dest = self._pick_destination(node_idx)
-                    if dest is None:
-                        continue
-                    route = self.pathfinder.find_path(node_idx, dest)
-                    if route is None or len(route) < 2:
-                        continue
+                if random.random() >= rate:
+                    continue
 
-                    # Pick vehicle type
-                    vtype = self._pick_vehicle_type(vehicle_type_probs)
-                    veh = Vehicle(
-                        vehicle_id=self._next_vehicle_id,
-                        vehicle_type=vtype,
-                        route=route,
-                        lane=lane,
-                    )
-                    self._next_vehicle_id += 1
+                # Queue full check first (cheap)
+                if len(ix.lanes[lane]) >= MAX_QUEUE_PER_LANE:
+                    continue
 
-                    if ix.enqueue(veh, lane):
-                        self._active_vehicles[veh.vehicle_id] = veh
-                        spawned += 1
+                # Pick destination and get cached route
+                dest = self._pick_destination(node_idx)
+                if dest is None:
+                    continue
+                route = self._get_cached_route(node_idx, dest)
+                if route is None:
+                    continue
+
+                # Pick vehicle type
+                vtype = self._pick_vehicle_type(vehicle_type_probs)
+                veh = Vehicle(
+                    vehicle_id=self._next_vehicle_id,
+                    vehicle_type=vtype,
+                    route=route,
+                    lane=lane,
+                )
+                self._next_vehicle_id += 1
+
+                if ix.enqueue(veh, lane):
+                    self._active_vehicles[veh.vehicle_id] = veh
+                    spawned += 1
 
         return spawned
 
@@ -282,7 +326,7 @@ class TrafficGrid:
         return edges
 
     def _pick_destination(self, origin: int) -> Optional[int]:
-        candidates = list(self._edge_nodes - {origin})
+        candidates = [n for n in self._edge_nodes if n != origin]
         if not candidates:
             return None
         return random.choice(candidates)
@@ -307,11 +351,6 @@ class TrafficGrid:
         dr = to_ix.row - from_ix.row
         dc = to_ix.col - from_ix.col
 
-        # Incoming direction determines lane group:
-        # Vehicle coming from North (dr=1) → enters S approach lanes (3-5)
-        # Vehicle coming from South (dr=-1) → enters N approach lanes (0-2)
-        # Vehicle coming from West (dc=1) → enters E approach lanes (6-8)
-        # Vehicle coming from East (dc=-1) → enters W approach lanes (9-11)
         if dr == 1:
             base = 0  # entering from North
         elif dr == -1:
@@ -323,6 +362,6 @@ class TrafficGrid:
         else:
             base = 0
 
-        # Sub-lane: through(0), left(1), right(2) — random for now
+        # Sub-lane: through(0), left(1), right(2) — random
         sub = random.randint(0, 2)
         return base + sub

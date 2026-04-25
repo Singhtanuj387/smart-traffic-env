@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  traffic-env-1:
+    build:
+      context: ./smart_traffic
+      dockerfile: server/Dockerfile
+    image: smart-traffic-env:latest
+    ports:
+      - '8001:8000'
+    environment:
+      - ENV_SEED=42
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  traffic-env-2:
+    build:
+      context: ./smart_traffic
+      dockerfile: server/Dockerfile
+    image: smart-traffic-env:latest
+    ports:
+      - '8002:8000'
+    environment:
+      - ENV_SEED=43
+
+  traffic-env-3:
+    build:
+      context: ./smart_traffic
+      dockerfile: server/Dockerfile
+    image: smart-traffic-env:latest
+    ports:
+      - '8003:8000'
+    environment:
+      - ENV_SEED=44
+
+  traffic-env-4:
+    build:
+      context: ./smart_traffic
+      dockerfile: server/Dockerfile
+    image: smart-traffic-env:latest
+    ports:
+      - '8004:8000'
+    environment:
+      - ENV_SEED=45

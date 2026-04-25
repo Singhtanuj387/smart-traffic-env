@@ -4,77 +4,79 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Smart Traffic Environment Client."""
+"""
+Smart Traffic Environment Client.
 
-from typing import Dict
+HTTP/WebSocket client for interacting with the running TrafficEnvironment server.
+Training scripts use this client; never import the server class directly.
+"""
 
+from __future__ import annotations
+
+from typing import Dict, List, Optional
+
+import numpy as np
 from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
 from openenv.core.env_server.types import State
 
-from .models import SmartTrafficAction, SmartTrafficObservation
+from .models import (
+    AgentObservation,
+    GlobalMetrics,
+    MultiAgentAction,
+    ScenarioFlags,
+    TrafficAction,
+    TrafficObservation,
+    TrafficState,
+    PHASE_LIST,
+)
 
 
 class SmartTrafficEnv(
-    EnvClient[SmartTrafficAction, SmartTrafficObservation, State]
+    EnvClient[MultiAgentAction, TrafficObservation, TrafficState]
 ):
     """
     Client for the Smart Traffic Environment.
 
-    This client maintains a persistent WebSocket connection to the environment server,
-    enabling efficient multi-step interactions with lower latency.
-    Each client instance has its own dedicated environment session on the server.
+    Connects to the running HTTP/WebSocket server and provides a clean
+    Python API for training and evaluation.
 
     Example:
-        >>> # Connect to a running server
         >>> with SmartTrafficEnv(base_url="http://localhost:8000") as client:
         ...     result = client.reset()
-        ...     print(result.observation.echoed_message)
-        ...
-        ...     result = client.step(SmartTrafficAction(message="Hello!"))
-        ...     print(result.observation.echoed_message)
-
-    Example with Docker:
-        >>> # Automatically start container and connect
-        >>> client = SmartTrafficEnv.from_docker_image("smart_traffic-env:latest")
-        >>> try:
-        ...     result = client.reset()
-        ...     result = client.step(SmartTrafficAction(message="Test"))
-        ... finally:
-        ...     client.close()
+        ...     # Create actions for all 81 agents
+        ...     actions = [0] * 81  # phase indices
+        ...     result = client.step_flat(actions)
     """
 
-    def _step_payload(self, action: SmartTrafficAction) -> Dict:
-        """
-        Convert SmartTrafficAction to JSON payload for step message.
+    def _step_payload(self, action: MultiAgentAction) -> Dict:
+        """Convert MultiAgentAction to JSON payload for step message."""
+        return action.model_dump(exclude={"metadata"})
 
-        Args:
-            action: SmartTrafficAction instance
-
-        Returns:
-            Dictionary representation suitable for JSON encoding
-        """
-        return {
-            "message": action.message,
-        }
-
-    def _parse_result(self, payload: Dict) -> StepResult[SmartTrafficObservation]:
-        """
-        Parse server response into StepResult[SmartTrafficObservation].
-
-        Args:
-            payload: JSON response data from server
-
-        Returns:
-            StepResult with SmartTrafficObservation
-        """
+    def _parse_result(self, payload: Dict) -> StepResult[TrafficObservation]:
+        """Parse server response into StepResult[TrafficObservation]."""
         obs_data = payload.get("observation", {})
-        observation = SmartTrafficObservation(
-            echoed_message=obs_data.get("echoed_message", ""),
-            message_length=obs_data.get("message_length", 0),
+
+        # Parse agent observations
+        agents = []
+        for ag_data in obs_data.get("agents", []):
+            agents.append(AgentObservation(**ag_data))
+
+        # Parse global metrics
+        gm_data = obs_data.get("global_metrics", {})
+        global_metrics = GlobalMetrics(**gm_data) if gm_data else GlobalMetrics()
+
+        # Parse scenario flags
+        sf_data = obs_data.get("scenario_flags", {})
+        scenario_flags = ScenarioFlags(**sf_data) if sf_data else ScenarioFlags()
+
+        observation = TrafficObservation(
+            step=obs_data.get("step", 0),
             done=payload.get("done", False),
             reward=payload.get("reward"),
-            metadata=obs_data.get("metadata", {}),
+            agents=agents,
+            global_metrics=global_metrics,
+            scenario_flags=scenario_flags,
         )
 
         return StepResult(
@@ -83,17 +85,49 @@ class SmartTrafficEnv(
             done=payload.get("done", False),
         )
 
-    def _parse_state(self, payload: Dict) -> State:
-        """
-        Parse server response into State object.
-
-        Args:
-            payload: JSON response from state request
-
-        Returns:
-            State object with episode_id and step_count
-        """
-        return State(
+    def _parse_state(self, payload: Dict) -> TrafficState:
+        """Parse server response into TrafficState."""
+        return TrafficState(
             episode_id=payload.get("episode_id"),
             step_count=payload.get("step_count", 0),
+            queues=payload.get("queues", []),
+            wait_times=payload.get("wait_times", []),
+            phases=payload.get("phases", []),
+            phase_timers=payload.get("phase_timers", []),
+            yellow_flags=payload.get("yellow_flags", []),
+            vehicles_passed=payload.get("vehicles_passed", 0),
+            active_scenarios=payload.get("active_scenarios", []),
         )
+
+    # ── Convenience methods ──────────────────────────────────
+
+    def step_flat(self, actions: List[int]) -> StepResult[TrafficObservation]:
+        """
+        Convenience wrapper: accepts flat list of 81 phase indices (0-4).
+        Converts to MultiAgentAction and calls step().
+        """
+        batch = MultiAgentAction(
+            actions=[
+                TrafficAction(agent_id=i, phase=PHASE_LIST[a])
+                for i, a in enumerate(actions)
+            ]
+        )
+        return self.step(batch)
+
+    @staticmethod
+    def get_numpy_obs(obs: TrafficObservation) -> np.ndarray:
+        """Return (81, 47) numpy array of agent observations."""
+        rows = []
+        for ag in obs.agents:
+            row = (
+                ag.queue_lengths      # 12
+                + ag.wait_times       # 12
+                + ag.current_phase    # 5
+                + [ag.phase_elapsed]  # 1
+                + [ag.yellow_active]  # 1
+                + ag.neighbor_queues  # 8
+                + ag.congestion_index # 4
+                + ag.special_flags    # 4 → total 47
+            )
+            rows.append(row)
+        return np.array(rows, dtype=np.float32)  # (81, 47)
