@@ -1,5 +1,5 @@
 ---
-title: Smart Traffic
+title: Smart Traffic MARL
 emoji: 🚦
 colorFrom: green
 colorTo: blue
@@ -10,83 +10,111 @@ tags:
   - reinforcement-learning
   - smart-traffic
   - marl
+  - llm-agents
 ---
 
-# Smart Traffic MARL Environment
+# 🚦 Smart Traffic MARL: The Next-Gen City Grid 🚦
 
-## Motivation and Description
-Smart Traffic is an 81-agent Multi-Agent Reinforcement Learning (MARL) environment set on a 9x9 grid representation of a city center. Optimizing global traffic flow is incredibly sensitive to hyper-local phase choices, leading to cascading congestion from even a single poorly-timed intersection. We motivate this environment as a highly non-stationary stress test for coordination, generalization, and failure-recovery algorithms under complex dynamics.
+Welcome to the **Smart Traffic** environment! This isn't just a simple reinforcement learning grid—it is a cutting-edge, 81-Agent **Sequential Multi-Agent Decision Process (SMDP)** designed to strictly evaluate how AI coordinates massive city infrastructure under extreme stress. 
 
-## Action Space
-Each of the 81 agents (representing an intersection) submits a single integer `[0-4]`.
-This is a standard global `MultiDiscrete([5]*81)` space.
+By utilizing the standard **OpenEnv** architecture, this project allows you to hook up anything from standard PPO matrices to massive Large Language Models (LLMs) to control the flow of a virtual city!
 
-* `0`: NS_STRAIGHT_GREEN
-* `1`: EW_STRAIGHT_GREEN
-* `2`: PROTECTED_NS_LEFT
-* `3`: PROTECTED_EW_LEFT
-* `4`: ALL_RED_HOLD
+---
 
-*Note:* Dynamic yellow transitions are automatically enforced in the environment wrapper to ensure safety. Switches to distinct green phases automatically inject a 3-step yellow/red phase internally, meaning the action space is safe.
+## 🧠 The Deep Dive: How it Works (*Ek Ek Chij!*)
 
-## Observation Space
-The environment returns a complex structured state for each agent. The unrolled flat Gym observation space per agent is size `47`.
-- **Queues (12)**: Queue fullness `0-1` mapped onto all 12 inbound lanes.
-- **Wait Times (12)**: Avg wait time per lane up to 120 secs mapped to `0-1`.
-- **Current Phase (5)**: One-hot encoded signal state.
-- **Phase Elapsed (1)**: Seconds since last switch normalized mapped `0-1`.
-- **Yellow Flag (1)**: Boolean state `[0,1]` representing intermediate switch.
-- **Neighbor Queues (8)**: Neighbor intersections `Mean Queue` + `Max Queue` per direction.
-- **Congestion Index (4)**: `[N, S, E, W]` directional congestion tracking.
-- **Flags (4)**: Dynamic scenario indicators (`Rush Hour Active`, `Emergency Pass`, `Adverse Weather`, `Block Active`).
+### 1. The 9x9 City Grid (81 Agents)
+The environment simulates a dense urban center with 81 distinct intersections. Each intersection is its own independent "Agent". Global traffic flow is incredibly sensitive to hyper-local phase choices, meaning one bad traffic light can cause a catastrophic rippling wave of congestion across the entire city.
 
-## Task Scenarios
-The environment includes 14 stress-test sub-scenarios:
+### 2. Sequential "Green Wave" Action Space
+We completely rebuilt the architecture to evaluate actions **sequentially**. Instead of all 81 lights firing blindly at the same time, the environment pauses physics and asks Agent #0, then Agent #1, all the way up to Agent #80. 
+This allows the AI to develop highly complex "Green Wave" algorithms where intersections react to what the previous intersection *just* decided, rather than guessing!
+
+Each agent submits a single integer `[0-4]`:
+* `0`: **NS_STRAIGHT** (North-South Green)
+* `1`: **EW_STRAIGHT** (East-West Green)
+* `2`: **NS_LEFT** (Protected North-South Left Turn)
+* `3`: **EW_LEFT** (Protected East-West Left Turn)
+* `4`: **ALL_RED** (Stop all traffic / Hold)
+
+### 3. The 67-Dimensional State Space
+To solve the "non-stationarity" problem (where agents don't know what their neighbors are doing), we inject a massive 67-dimensional observation tensor into the brain of every agent before they act:
+- **Queues (12)**: How full the 12 inbound lanes are `(0.0 - 1.0)`.
+- **Wait Times (12)**: Average wait time per lane, mapped mathematically to punish starvation.
+- **Neighbor Phases (20)**: One-hot encoded data showing *exactly* what the 4 closest neighbor intersections are currently doing!
+- **Current Phase (5)**: What phase is currently active.
+- **Phase Elapsed (1)**: How long this light has been green.
+- **Yellow Flag (1)**: Safety transition indicator.
+- **Neighbor Queues (8)**: Mean and Max queues of surrounding nodes.
+- **Congestion Index (4)**: `[N, S, E, W]` directional volume tracking.
+- **Flags (4)**: Dynamic scenario indicators (`Emergency Pass`, `Adverse Weather`, etc.).
+
+---
+
+## 🌪️ The Stress Tests (14 Task Scenarios)
+The environment includes brutally hard stress-test scenarios. Can your LLM save the city?
 1. **Foundation (Baseline)** - Base deterministic network flow.
 2. **Rush Hour Wave (Easy)** - Heavy spawn skew progressing from one boundary.
 3. **Directional Imbalance (Easy)** - 90/10 skew E/W. 
 4. **Adaptive Demand (Medium)** - 24hr realistic circadian rhythms. 
-5. **Vehicle Mix (Medium)** - Heterogenous vehicle types (cars vs bikes vs 3x-clear-time trucks).
-6. **Pedestrian Surge (Medium)** - Random intersections forced to 30s All-Red. 
+5. **Vehicle Mix (Medium)** - Heterogenous vehicle types (cars vs bikes vs heavy trucks).
+6. **Pedestrian Surge (Medium)** - Random intersections forced to 30s All-Red for safety. 
 7. **Emergency Priority (Hard)** - Mandatory clearing paths for ambulance routes. 
 8. **Event Spike (Hard)** - 15,000+ car burst spawn from a central 'stadium'.
 9. **Road Block (Hard)** - Dynamic edge invalidation + A* rerouting.
 10. **Network Partition (Extreme)** - Complete horizontal/vertical bisect logic of city network.
 11. **Cascading Failure (Extreme)** - Singular node overload spilling exponentially outwards.
 
-*(Includes complex aggregate incidents like Multi-Incident combination logic).*
+---
 
-## Setup and Usage
-The environment acts out of the box as a fully compliant `openenv-core` HTTP Fast API endpoint. Both standard environments (`inference.py`) and standard multi-agent Gymnasium adapters are included out of the box.
+## 🚀 Training the Brains
 
-### Container (HF Space/Local)
+We provide two distinct, state-of-the-art training pipelines out of the box:
+
+### 1. MAPPO (Multi-Agent PPO)
+A highly optimized, standard PyTorch implementation of MAPPO (`train.py`). It calculates the 81 sequential sub-steps natively and maintains shared critic networks to maximize global reward.
+
+### 2. The LLM PPO Pipeline (`train_llm.py`) 🔥
+**This is the coolest part of the project.**
+We have integrated a full Large Language Model (LLM) Reinforcement Learning loop! 
+- Powered by **Hugging Face TRL** and **PEFT (LoRA)**.
+- Wraps powerful foundational models like `Qwen 1.5B` or `Llama-3.2-1B` in a PPO Value Head.
+- Evaluates the 67-dimensional state as a semantic text string!
+- **Hardware Optimized**: Uses `bitsandbytes` 4-bit quantization, `batch_size=1`, and adapter-only referencing to allow you to train massive 151k-vocab LLMs entirely on a free Google Colab T4 GPU!
+
+*(See `colab_training_guide.md` for the exact cell-by-cell copy-paste guide to train this on the cloud for free!)*
+
+---
+
+## 🛠️ Setup and Usage
+
+This project strictly adheres to the `openenv-core` HTTP Fast API architecture.
+
+### Running the Server Locally
+```bash
+# Install dependencies
+pip install openenv-core[core] fastapi uvicorn
+
+# Spin up the environment server
+uvicorn smart_traffic.server.app:app --host 0.0.0.0 --port 8000
+```
+
+### Docker Deployment
 The easiest way to execute is via Docker:
 ```bash
 docker build -t smart-traffic-env .
 docker run -p 8000:8000 smart-traffic-env
 ```
 
-### Direct Python Usage (Gym Adapter)
+### Gym Adapter Usage
 ```python
 from smart_traffic.training import TrafficGymAdapter
-import numpy as np
 
 # Instantiate standard wrapper hitting your local/HF URL
 env = TrafficGymAdapter(server_url="http://localhost:8000", scenario="rush_hour")
-obs, info = env.reset()
 
-actions = np.random.randint(0, 5, size=81)
-obs, reward, done, trunc, info = env.step(actions)
+# The environment handles the 81 sub-steps inherently under the hood!
+obs, info = env.reset()
 ```
 
-## Baselines
-We evaluate using a GPT-4o-mini structured-output baseline script `inference.py` over 100 steps.
-
-| Scenario | Average Step Reward | Note |
-|----|----|----|
-| Baseline (none) | +1.2 | Normal flow handled easily |
-| Rush Hour | -3.42 | Edges heavily saturated |
-| Emergency Priority | -6.11 | Ambulance pathing forces sub-optimal global flow |
-| Cascading Failure | -12.45 | Radial congestion overflow tests recovery limit |
-
-*You can evaluate all scenarios reproducibly via the provided `inference.py` script.*
+Enjoy building the future of autonomous infrastructure! 🏎️💨
