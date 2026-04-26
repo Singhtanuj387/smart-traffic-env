@@ -19,7 +19,9 @@ from smart_traffic.client import SmartTrafficEnv
 from smart_traffic.models import TrafficAction, PHASE_LIST
 from inference import extract_context
 
-def main():
+import asyncio
+
+async def main():
     # 1. Configuration
     max_episodes = 5
     max_steps_per_episode = 10  # keep small for example loop
@@ -65,8 +67,6 @@ def main():
         batch_size=8,
         mini_batch_size=2,
         gradient_accumulation_steps=4,
-        # Optimize disabled for CPU
-        optimize_cuda_cache=False,
     )
     
     ppo_trainer = PPOTrainer(
@@ -86,8 +86,7 @@ def main():
         
         # Reset environment
         try:
-            import asyncio
-            res = asyncio.run(env_client.reset(scenario="rush_hour"))
+            res = await env_client.reset(scenario="rush_hour")
             obs = res.observation if hasattr(res, "observation") else res
         except Exception as e:
             print(f"Failed to reset environment: {e}")
@@ -137,7 +136,7 @@ def main():
                 
                 # Step environment sequentially
                 action_payload = TrafficAction(agent_id=agent_idx, phase=PHASE_LIST[action_int])
-                step_res = asyncio.run(env_client.step(action_payload))
+                step_res = await env_client.step(action_payload)
                 obs = step_res.observation
                 
                 # Assign global reward to the batch
@@ -163,4 +162,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
