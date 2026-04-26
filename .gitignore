@@ -1,1 +1,32 @@
+# Virtual environments
 /myenv
+.venv
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# UV lock (large, auto-generated)
+smart_traffic/uv.lock
+
+# Training outputs
+trl_marl_smart_traffic/
+weights/*.pt
+wandb/
+
+# Misc
+*.log

@@ -10,7 +10,10 @@ from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..models import TrafficObservation
+    try:
+        from ..models import TrafficObservation
+    except ImportError:
+        from models import TrafficObservation
 
 try:
     import pygame

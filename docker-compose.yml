@@ -3,8 +3,8 @@ version: '3.8'
 services:
   traffic-env-1:
     build:
-      context: ./smart_traffic
-      dockerfile: server/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     image: smart-traffic-env:latest
     ports:
       - '8001:8000'
@@ -18,8 +18,8 @@ services:
 
   traffic-env-2:
     build:
-      context: ./smart_traffic
-      dockerfile: server/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     image: smart-traffic-env:latest
     ports:
       - '8002:8000'
@@ -28,8 +28,8 @@ services:
 
   traffic-env-3:
     build:
-      context: ./smart_traffic
-      dockerfile: server/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     image: smart-traffic-env:latest
     ports:
       - '8003:8000'
@@ -38,8 +38,8 @@ services:
 
   traffic-env-4:
     build:
-      context: ./smart_traffic
-      dockerfile: server/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     image: smart-traffic-env:latest
     ports:
       - '8004:8000'

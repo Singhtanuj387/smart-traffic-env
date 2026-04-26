@@ -14,7 +14,10 @@ from typing import Dict, List, Optional, TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from ..core.grid import TrafficGrid
+    try:
+        from ..core.grid import TrafficGrid
+    except ImportError:
+        from core.grid import TrafficGrid
 
 
 class EmergencyVehicle(BaseModel):

@@ -30,8 +30,12 @@ except Exception as e:
         "openenv is required. Install with 'pip install openenv-core[core]'"
     ) from e
 
-from smart_traffic.models import TrafficAction, TrafficObservation
-from smart_traffic.server.smart_traffic_environment import SmartTrafficEnvironment
+try:
+    from smart_traffic.models import TrafficAction, TrafficObservation
+    from smart_traffic.server.smart_traffic_environment import SmartTrafficEnvironment
+except ImportError:
+    from models import TrafficAction, TrafficObservation
+    from server.smart_traffic_environment import SmartTrafficEnvironment
 
 
 # Create the app with openenv HTTP server wrapper

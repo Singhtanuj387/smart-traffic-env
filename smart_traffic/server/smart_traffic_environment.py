@@ -27,9 +27,18 @@ try:
         TrafficObservation,
         TrafficState,
     )
-    from ..core.grid import TrafficGrid
-    from ..rewards.engine import RewardEngine
-    from ..scenarios.manager import ScenarioManager
+    try:
+        from ..core.grid import TrafficGrid
+    except ImportError:
+        from core.grid import TrafficGrid
+    try:
+        from ..rewards.engine import RewardEngine
+    except ImportError:
+        from rewards.engine import RewardEngine
+    try:
+        from ..scenarios.manager import ScenarioManager
+    except ImportError:
+        from scenarios.manager import ScenarioManager
 except ImportError:
     from models import (
         AgentObservation,

@@ -16,7 +16,10 @@ from .event_spike import EventSpike
 from .cascading_failure import CascadingFailure
 
 if TYPE_CHECKING:
-    from ..core.grid import TrafficGrid
+    try:
+        from ..core.grid import TrafficGrid
+    except ImportError:
+        from core.grid import TrafficGrid
 
 
 class MultiIncident(BaseScenario):

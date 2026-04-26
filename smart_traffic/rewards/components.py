@@ -14,7 +14,10 @@ from typing import TYPE_CHECKING, List, Optional
 import numpy as np
 
 if TYPE_CHECKING:
-    from ..core.grid import TrafficGrid
+    try:
+        from ..core.grid import TrafficGrid
+    except ImportError:
+        from core.grid import TrafficGrid
 
 
 def R_throughput(grid: "TrafficGrid", agent_id: int) -> float:

@@ -300,7 +300,10 @@ class TrafficGrid:
 
     def get_global_metrics(self):
         """Return GlobalMetrics for the current state."""
-        from ..models import GlobalMetrics
+        try:
+            from ..models import GlobalMetrics
+        except ImportError:
+            from models import GlobalMetrics
 
         total_wait = 0.0
         total_vehicles = 0

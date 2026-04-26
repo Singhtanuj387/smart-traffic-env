@@ -13,8 +13,14 @@ import asyncio
 import gymnasium as gym
 import numpy as np
 
-from ..client import SmartTrafficEnv
-from ..models import TrafficAction, PHASE_LIST
+try:
+    from ..client import SmartTrafficEnv
+except ImportError:
+    from client import SmartTrafficEnv
+try:
+    from ..models import TrafficAction, PHASE_LIST
+except ImportError:
+    from models import TrafficAction, PHASE_LIST
 
 
 class TrafficGymAdapter(gym.Env):

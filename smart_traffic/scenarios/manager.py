@@ -10,7 +10,10 @@ from __future__ import annotations
 import random
 from typing import Dict, List, Optional, TYPE_CHECKING
 
-from ..models import ScenarioFlags
+try:
+    from ..models import ScenarioFlags
+except ImportError:
+    from models import ScenarioFlags
 from .base import BaseScenario, ScenarioUpdate
 
 # Import all 14 scenarios
@@ -30,7 +33,10 @@ from .sensor_noise import SensorNoise
 from .recovery_challenge import RecoveryChallenge
 
 if TYPE_CHECKING:
-    from ..core.grid import TrafficGrid
+    try:
+        from ..core.grid import TrafficGrid
+    except ImportError:
+        from core.grid import TrafficGrid
 
 
 SCENARIO_REGISTRY: Dict[str, type] = {

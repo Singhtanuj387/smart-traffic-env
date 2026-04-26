@@ -10,7 +10,10 @@ from typing import Dict, List, TYPE_CHECKING
 from .base import BaseScenario, ScenarioUpdate
 
 if TYPE_CHECKING:
-    from ..core.grid import TrafficGrid
+    try:
+        from ..core.grid import TrafficGrid
+    except ImportError:
+        from core.grid import TrafficGrid
 
 
 class DirectionalImbalance(BaseScenario):

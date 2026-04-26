@@ -41,21 +41,5 @@ all = [
 server = "smart_traffic.server.app:main"
 
 [tool.setuptools]
-include-package-data = true
-packages = [
-    "smart_traffic",
-    "smart_traffic.server",
-    "smart_traffic.core",
-    "smart_traffic.rewards",
-    "smart_traffic.scenarios",
-    "smart_traffic.training",
-    "smart_traffic.visualization",
-]
-[tool.setuptools.package-dir]
-"smart_traffic" = "."
-"smart_traffic.server" = "server"
-"smart_traffic.core" = "core"
-"smart_traffic.rewards" = "rewards"
-"smart_traffic.scenarios" = "scenarios"
-"smart_traffic.training" = "training"
-"smart_traffic.visualization" = "visualization"
+[tool.setuptools.packages.find]
+include = ["smart_traffic*"]

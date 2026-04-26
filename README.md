@@ -65,6 +65,44 @@ The environment includes brutally hard stress-test scenarios. Can your LLM save 
 10. **Network Partition (Extreme)** - Complete horizontal/vertical bisect logic of city network.
 11. **Cascading Failure (Extreme)** - Singular node overload spilling exponentially outwards.
 
+---
+
+## 🎯 Reward Architecture: A Signal That Actually Teaches
+
+Our reward system is built on **OpenEnv's composable Rubric primitives** (`WeightedSum`, `Gate`, `Rubric`). Every scoring component is an independent, inspectable module — not a monolithic function. This makes ablation studies trivial and reward gaming nearly impossible.
+
+### The Rubric Tree
+```
+Gate(AllRedExploitDetector)           ← Zeros reward if agent holds ALL_RED > 5 steps
+  └── Gate(FlickerExploitDetector)    ← Zeros reward if agent flickers phases > 6x in 10 steps
+        └── WeightedSum(
+              ThroughputRubric        (25%)  ← Primary positive signal: cars cleared
+              QueueReductionRubric    (20%)  ← Are queues actually draining?
+              WaitTimePenaltyRubric   (15%)  ← Exponential frustration curve above 60s
+              CoordinationRubric      (10%)  ← Don't flood congested neighbors
+              FairnessRubric           (5%)  ← Gini coefficient across lanes
+              PhaseStabilityRubric     (5%)  ← Penalize premature phase switches
+              EmergencyRubric         (10%)  ← Ambulance path compliance
+              CascadePreventionRubric  (5%)  ← Don't overflow downstream nodes
+              RecoveryRubric           (5%)  ← 10-step lookback improvement
+            )
+              └── Potential-Based Shaping (Ng et al. 1999)
+```
+
+### Why It's Hard to Game
+| Exploit Strategy | What Happens | Why It Fails |
+|---|---|---|
+| **Permanent ALL_RED** | Agent stops all traffic to prevent queue growth | `AllRedExploitDetector` gate zeros the entire reward after 5 steps |
+| **Rapid Phase Flickering** | Agent switches every step to manipulate queue readings | `FlickerExploitDetector` gate zeros the reward if >6 switches in 10 steps |
+| **Greedy Local Clearing** | Agent clears its queue but floods neighbors | `CoordinationRubric` + `CascadePreventionRubric` penalize downstream overflow |
+| **Single-Direction Bias** | Agent only serves the highest-volume lane forever | `FairnessRubric` (Gini coefficient) penalizes lane starvation |
+
+### Why It Teaches
+- **Rich Signal**: 9 continuous rubrics, not sparse 0/1. The agent gets dense feedback every single step.
+- **Clever Measurement**: `WaitTimePenaltyRubric` uses an exponential curve mimicking human frustration. `FairnessRubric` uses the Gini coefficient to measure lane equity — a concept borrowed from economics.
+- **Temporal Credit**: `RecoveryRubric` looks back 10 steps to reward long-term strategic planning, not just greedy per-step optimization.
+- **Policy Invariant Shaping**: Potential-based shaping accelerates learning without changing the optimal policy (proven by Ng, Harada & Russell 1999).
+
 ## 📊 Performance Plots
 
 The following plots demonstrate the learning convergence and performance of our models across the various stress-test scenarios. All multiple-run comparisons (e.g., Baseline vs. Trained vs. Ablations) are plotted on the same axes to make the performance delta obvious.

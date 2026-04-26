@@ -8,10 +8,16 @@ import random
 from typing import Dict, List, TYPE_CHECKING
 
 from .base import BaseScenario, ScenarioUpdate
-from ..core.vehicle import Vehicle, VehicleType
+try:
+    from ..core.vehicle import Vehicle, VehicleType
+except ImportError:
+    from core.vehicle import Vehicle, VehicleType
 
 if TYPE_CHECKING:
-    from ..core.grid import TrafficGrid
+    try:
+        from ..core.grid import TrafficGrid
+    except ImportError:
+        from core.grid import TrafficGrid
 
 
 class RecoveryChallenge(BaseScenario):
@@ -22,7 +28,10 @@ class RecoveryChallenge(BaseScenario):
 
     def reset(self, grid: "TrafficGrid") -> None:
         """Pre-fill all queues to 90% capacity."""
-        from ..core.intersection import MAX_QUEUE_PER_LANE
+        try:
+            from ..core.intersection import MAX_QUEUE_PER_LANE
+        except ImportError:
+            from core.intersection import MAX_QUEUE_PER_LANE
 
         target = int(MAX_QUEUE_PER_LANE * self._initial_fill)
         vid = 100000  # offset to avoid ID collisions
