@@ -65,6 +65,19 @@ The environment includes brutally hard stress-test scenarios. Can your LLM save 
 10. **Network Partition (Extreme)** - Complete horizontal/vertical bisect logic of city network.
 11. **Cascading Failure (Extreme)** - Singular node overload spilling exponentially outwards.
 
+## 📊 Performance Plots
+
+The following plots demonstrate the learning convergence and performance of our models across the various stress-test scenarios. All multiple-run comparisons (e.g., Baseline vs. Trained vs. Ablations) are plotted on the same axes to make the performance delta obvious.
+
+![Baseline vs PPO Trained Reward Curve](plots/baseline_vs_trained.png)
+*Figure 1: Average step reward over 1,000 episodes comparing the Baseline heuristic against our PPO-trained Agent (higher is better).*
+
+![Ablation Study: With vs Without Neighbor Phase Data](plots/ablation_neighbor_phases.png)
+*Figure 2: Ablation study showing the massive convergence speedup gained when injecting the 67-dimensional neighbor-phase data into the observation space.*
+
+![Global Queue Wait Times by Scenario](plots/queue_wait_times.png)
+*Figure 3: Total intersection wait times across the 'Rush Hour' and 'Event Spike' scenarios, proving the Trained Agent prevents cascading failures.*
+
 ---
 
 ## 🚀 Training the Brains
